@@ -47,12 +47,21 @@ module add #(
             pipe_valid <= 1'b0;
             pipe_data  <= '0;
         end else begin
-            if (handshake_in) begin
-                pipe_valid <= 1;
-                pipe_data <= calc_result;
-            end else if (handshake_out) begin
-                pipe_valid <= 0;
-            end 
+            if(pipe_valid == 1'b1)begin
+                if (out_ready) begin
+                    if(in1_valid && in2_valid) begin
+                        pipe_valid <= 1;
+                        pipe_data  <= calc_result;
+                    end else begin
+                    pipe_valid <= 0;
+                    end
+                end 
+            end else begin
+                if (in1_valid && in2_valid) begin
+                    pipe_valid <= 1;
+                    pipe_data <= calc_result;
+                end
+            end
         end
     end
     assign out_valid = pipe_valid;
