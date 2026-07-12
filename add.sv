@@ -17,7 +17,6 @@ module add #(
 
     logic                  pipe_valid;
     logic [P_CH*A_BIT-1:0] pipe_data;
-    logic                  handshake_in;
     logic                  handshake_out;
     logic [P_CH*A_BIT-1:0] calc_result;
 
