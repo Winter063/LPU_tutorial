@@ -116,10 +116,10 @@ module conv #(
     assign is_lst_kk_fi         = (cntr_kk == KK - 1) && (cntr_fi == FOLD_I - 1) ;  //only when last fold out channel and last fold in channel and last kernel, the input data is valid
     assign in_ready             = is_fst_fo && pipe_en_out;
     assign weight_addr          = (cntr_fo * KK * FOLD_I) + cntr_fi * KK + cntr_kk;
-    assign line_buffer_we       = pipe_en && is_fst_fo;
+    assign line_buffer_we       = is_fst_fo ? in_valid : 1'b0;  //only when first fold out channel, the input data is valid
     assign line_buffer_waddr    = cntr_fi * KK + cntr_kk;
     assign line_buffer_wdata    = in_data;
-    assign line_buffer_re       = pipe_en && !is_fst_fo;
+    assign line_buffer_re       = !is_fst_fo && pipe_en;  //only when not first fold out channel, the input data is valid
     assign line_buffer_raddr    = cntr_fi * KK + cntr_kk;
 
     always_ff @(posedge clk or negedge rst_n) begin
@@ -164,11 +164,12 @@ module conv #(
             if (pipe_en) begin
                 is_fst_fo_d1    <= is_fst_fo;
                 is_fst_kk_fi_d1 <= is_fst_kk_fi;
+                is_lst_kk_fi_d1 <= is_lst_kk_fi;
             end
-            if (is_lst_kk_fi && pipe_en)
-                is_lst_kk_fi_d1 <= 1'b1;
-            else if (pipe_en)
-                is_lst_kk_fi_d1 <= 1'b0;
+            // if (is_lst_kk_fi && pipe_en)
+            //     is_lst_kk_fi_d1 <= 1'b1;
+            // else if (pipe_en)
+            //     is_lst_kk_fi_d1 <= 1'b0;
         end
         
     end
@@ -209,7 +210,7 @@ module conv #(
                 .clk    (clk),
                 .rst_n  (rst_n),
                 .en     (pipe_en),
-                .dat_vld(pipe_en_in),
+                .dat_vld(pipe_en),
                 .clr    (is_fst_kk_fi_d1),
                 .x_vec  (x_vec),
                 .w_vec  (w_vec[o]),
@@ -226,7 +227,7 @@ module conv #(
         else if (!out_valid_r) begin
             if(is_lst_kk_fi_d1 && pipe_en)
                 out_valid_r <= 1'b1;
-        end else if (out_valid_r) begin
+        end else begin
             if(out_ready)
                 out_valid_r <= 1'b0;
         end   
