@@ -28,7 +28,7 @@
 //  39    |    1    |    0    |    2    |   无新数据    |   0    |    2     | RAM[1]读出   | 直接赋值 kk0    |    0
 //  ...   |   ...   |   ...   |   ...   |    ...       |  ...   |   ...    |    ...       | ...           |    ...
 
-
+// no need to dly 2 cycles
 
 module conv #(
     parameter int unsigned P_ICH      = 4,
@@ -89,7 +89,6 @@ module conv #(
     ) u_weight_rom (
         .clk  (clk),
         .ce0  (pipe_en_out),//一直发无效数据，cnt不变，读一个位置
-        //.ce0(pipe_en),
         .addr0(weight_addr),
         .q0   (weight_data)
     );
@@ -120,7 +119,6 @@ module conv #(
     assign line_buffer_waddr    = cntr_fi * KK + cntr_kk;
     assign line_buffer_wdata    = in_data;
     assign line_buffer_re       = pipe_en_out;  //一直使能也没事，后面还有判断
-    //assign line_buffer_re       = !is_fst_fo && pipe_en
     assign line_buffer_raddr    = cntr_fi * KK + cntr_kk;
 
     always_ff @(posedge clk or negedge rst_n) begin
@@ -153,43 +151,29 @@ module conv #(
         end
     end
 
+    logic mac_array_data_vld_d1;
     logic is_fst_fo_d1;
     logic is_fst_kk_fi_d1;
-    logic is_lst_kk_fi_d1;
-    logic is_lst_kk_fi_d2;
-    logic is_lst_kk_fi_d3;
-    logic is_lst_kk_fi_d4;
-    logic is_lst_kk_fi_d5;
-    logic mac_array_data_vld_d1;
+    logic [P_ICH+1:1] is_lst_kk_fi_dly;
     logic [P_ICH*A_BIT-1:0] in_data_d1;
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             in_data_d1   <= '0;
             is_fst_fo_d1 <= 1'b1;
             is_fst_kk_fi_d1 <= 1'b0;
-            is_lst_kk_fi_d1 <= 1'b0;
-            is_lst_kk_fi_d2 <= 1'b0;
-            is_lst_kk_fi_d3 <= 1'b0;
-            is_lst_kk_fi_d4 <= 1'b0;
-            is_lst_kk_fi_d5 <= 1'b0;
+            is_lst_kk_fi_dly <=  '0;
             mac_array_data_vld_d1 <= 1'b0;
         end else begin
-            //if (pipe_en) begin
             if (pipe_en_out) begin
                 in_data_d1      <= in_data;
                 is_fst_fo_d1    <= is_fst_fo;
                 is_fst_kk_fi_d1 <= is_fst_kk_fi;
-                is_lst_kk_fi_d1 <= is_lst_kk_fi;
-                is_lst_kk_fi_d2 <= is_lst_kk_fi_d1;
-                is_lst_kk_fi_d3 <= is_lst_kk_fi_d2;
-                is_lst_kk_fi_d4 <= is_lst_kk_fi_d3;
-                is_lst_kk_fi_d5 <= is_lst_kk_fi_d4;
                 mac_array_data_vld_d1 <= is_fst_fo ? in_valid : 1'b1;
+                is_lst_kk_fi_dly[1] <= is_lst_kk_fi;//1
+                for (int i = 1; i < P_ICH+1; i++) begin
+                    is_lst_kk_fi_dly[i+1] <= is_lst_kk_fi_dly[i];//1-2 2; 2-3 3;3-4 4; 4-5 5
+                end  
             end
-            // if (is_lst_kk_fi && pipe_en)
-            //     is_lst_kk_fi_d1 <= 1'b1;
-            // else if (pipe_en)
-            //     is_lst_kk_fi_d1 <= 1'b0;
         end
         
     end
@@ -231,7 +215,7 @@ module conv #(
         end
     endgenerate
 
-    assign out_valid = is_lst_kk_fi_d5;
+    assign out_valid = is_lst_kk_fi_dly[P_ICH+1];
 
     always_comb begin
         for (int o = 0; o < P_OCH; o++) begin
