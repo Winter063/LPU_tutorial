@@ -157,6 +157,9 @@ module conv #(
     logic is_fst_kk_fi_d1;
     logic is_lst_kk_fi_d1;
     logic is_lst_kk_fi_d2;
+    logic is_lst_kk_fi_d3;
+    logic is_lst_kk_fi_d4;
+    logic is_lst_kk_fi_d5;
     logic mac_array_data_vld_d1;
     logic [P_ICH*A_BIT-1:0] in_data_d1;
     always_ff @(posedge clk or negedge rst_n) begin
@@ -166,6 +169,9 @@ module conv #(
             is_fst_kk_fi_d1 <= 1'b0;
             is_lst_kk_fi_d1 <= 1'b0;
             is_lst_kk_fi_d2 <= 1'b0;
+            is_lst_kk_fi_d3 <= 1'b0;
+            is_lst_kk_fi_d4 <= 1'b0;
+            is_lst_kk_fi_d5 <= 1'b0;
             mac_array_data_vld_d1 <= 1'b0;
         end else begin
             //if (pipe_en) begin
@@ -175,6 +181,9 @@ module conv #(
                 is_fst_kk_fi_d1 <= is_fst_kk_fi;
                 is_lst_kk_fi_d1 <= is_lst_kk_fi;
                 is_lst_kk_fi_d2 <= is_lst_kk_fi_d1;
+                is_lst_kk_fi_d3 <= is_lst_kk_fi_d2;
+                is_lst_kk_fi_d4 <= is_lst_kk_fi_d3;
+                is_lst_kk_fi_d5 <= is_lst_kk_fi_d4;
                 mac_array_data_vld_d1 <= is_fst_fo ? in_valid : 1'b1;
             end
             // if (is_lst_kk_fi && pipe_en)
@@ -222,7 +231,7 @@ module conv #(
         end
     endgenerate
 
-    assign out_valid = is_lst_kk_fi_d2;
+    assign out_valid = is_lst_kk_fi_d5;
 
     always_comb begin
         for (int o = 0; o < P_OCH; o++) begin
