@@ -21,10 +21,10 @@
 // -------|---------|---------|---------|--------------|--------|----------|--------------|----------------|----------
 //  28    |    0    |    3    |    0    |ich[12:15],kk0|   1    |   27     |ich[8:11],kk8 | R累加           |    0
 //  ...   |   ...   |   ...   |   ...   |    ...       |  ...   |   ...    |    ...       | R累加           |    0
-//  36    |    0    |    3    |    8    |ich[12:15],kk8|   1    |   35     |ich[12:15],kk7| R累加             |   0
+//  36    |    3   |    3    |    8    |ich[12:15],kk8|   1    |   35     |ich[12:15],kk7| R累加             |   0 is_lst_fi_kk=1
 // =======|=========|=========|=========|==============|========|==========|==============|================|==========
-//  37    |    1    |    0    |    0    |   无新数据    |   0    |    0     |ich[12:15],kk8| R累加          |    0
-//  38    |    1    |    0    |    1    |   无新数据    |   0    |    1     | RAM[0]读出   | R累加 最终结果输出（clr 0->1）|    1
+//  37    |    0   |    0    |    0    |   无新数据    |   0    |    0     |ich[12:15],kk8| R累加          |    0  is_lst_fi_kk_d1=1
+//  38    |    0   |    0    |    1    |   无新数据    |   0    |    1     | RAM[0]读出   | R累加 最终结果输出（clr 0->1）|    1 is_lst_fi_kk_d2=1
 //  39    |    1    |    0    |    2    |   无新数据    |   0    |    2     | RAM[1]读出   | 直接赋值 kk0    |    0
 //  ...   |   ...   |   ...   |   ...   |    ...       |  ...   |   ...    |    ...       | ...           |    ...
 
@@ -68,7 +68,6 @@ module conv #(
     logic                                   pipe_en_in;
     logic                                   pipe_en_out;
     logic                                   is_fst_fo;
-    logic                                   mac_array_data_vld;
     logic        [         P_ICH*A_BIT-1:0] in_buf;
     logic                                   is_fst_kk_fi;
     logic                                   is_lst_kk_fi;
@@ -89,7 +88,8 @@ module conv #(
         .ROM_TYPE(W_ROM_TYPE)
     ) u_weight_rom (
         .clk  (clk),
-        .ce0  (pipe_en),
+        .ce0  (pipe_en_out),//一直发无效数据，cnt不变，读一个位置
+        //.ce0(pipe_en),
         .addr0(weight_addr),
         .q0   (weight_data)
     );
@@ -113,13 +113,14 @@ module conv #(
     assign pipe_en              = pipe_en_in && pipe_en_out;
     assign is_fst_fo            = (cntr_fo == 0);
     assign is_fst_kk_fi         = (cntr_kk == 0) && (cntr_fi == 0) ;  //only when first fold out channel and first fold in channel and first kernel, the input data is valid
-    assign is_lst_kk_fi         = (cntr_kk == KK - 1) && (cntr_fi == FOLD_I - 1) ;  //only when last fold out channel and last fold in channel and last kernel, the input data is valid
+    assign is_lst_kk_fi         = (cntr_kk == KK - 1) && (cntr_fi == FOLD_I - 1) && pipe_en_in;  //only when last fold out channel and last fold in channel and last kernel, the input data is valid
     assign in_ready             = is_fst_fo && pipe_en_out;
     assign weight_addr          = (cntr_fo * KK * FOLD_I) + cntr_fi * KK + cntr_kk;
-    assign line_buffer_we       = is_fst_fo ? in_valid : 1'b0;  //only when first fold out channel, the input data is valid
+    assign line_buffer_we       = is_fst_fo && in_valid;  //only when first fold out channel, the input data is valid
     assign line_buffer_waddr    = cntr_fi * KK + cntr_kk;
     assign line_buffer_wdata    = in_data;
-    assign line_buffer_re       = !is_fst_fo && pipe_en;  //only when not first fold out channel, the input data is valid
+    assign line_buffer_re       = pipe_en_out;  //一直使能也没事，后面还有判断
+    //assign line_buffer_re       = !is_fst_fo && pipe_en
     assign line_buffer_raddr    = cntr_fi * KK + cntr_kk;
 
     always_ff @(posedge clk or negedge rst_n) begin
@@ -155,16 +156,26 @@ module conv #(
     logic is_fst_fo_d1;
     logic is_fst_kk_fi_d1;
     logic is_lst_kk_fi_d1;
+    logic is_lst_kk_fi_d2;
+    logic mac_array_data_vld_d1;
+    logic [P_ICH*A_BIT-1:0] in_data_d1;
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
+            in_data_d1   <= '0;
             is_fst_fo_d1 <= 1'b1;
             is_fst_kk_fi_d1 <= 1'b0;
             is_lst_kk_fi_d1 <= 1'b0;
+            is_lst_kk_fi_d2 <= 1'b0;
+            mac_array_data_vld_d1 <= 1'b0;
         end else begin
-            if (pipe_en) begin
+            //if (pipe_en) begin
+            if (pipe_en_out) begin
+                in_data_d1      <= in_data;
                 is_fst_fo_d1    <= is_fst_fo;
                 is_fst_kk_fi_d1 <= is_fst_kk_fi;
                 is_lst_kk_fi_d1 <= is_lst_kk_fi;
+                is_lst_kk_fi_d2 <= is_lst_kk_fi_d1;
+                mac_array_data_vld_d1 <= is_fst_fo ? in_valid : 1'b1;
             end
             // if (is_lst_kk_fi && pipe_en)
             //     is_lst_kk_fi_d1 <= 1'b1;
@@ -174,14 +185,6 @@ module conv #(
         
     end
 
-    logic [P_ICH*A_BIT-1:0] in_data_d1;
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            in_data_d1 <= '0;
-        end else if(is_fst_fo && pipe_en) begin
-            in_data_d1 <= in_data;
-        end
-    end
     assign in_buf = is_fst_fo_d1 ? in_data_d1 : line_buffer_rdata;
 
     logic        [A_BIT-1:0] x_vec[P_ICH];
@@ -209,8 +212,8 @@ module conv #(
             ) u_mac_array (
                 .clk    (clk),
                 .rst_n  (rst_n),
-                .en     (pipe_en),
-                .dat_vld(pipe_en),
+                .en     (pipe_en_out),
+                .dat_vld(mac_array_data_vld_d1),
                 .clr    (is_fst_kk_fi_d1),
                 .x_vec  (x_vec),
                 .w_vec  (w_vec[o]),
@@ -219,20 +222,7 @@ module conv #(
         end
     endgenerate
 
-
-    logic out_valid_r;
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) 
-            out_valid_r <= 0;
-        else if (!out_valid_r) begin
-            if(is_lst_kk_fi_d1 && pipe_en)
-                out_valid_r <= 1'b1;
-        end else begin
-            if(out_ready)
-                out_valid_r <= 1'b0;
-        end   
-    end
-    assign out_valid = out_valid_r;
+    assign out_valid = is_lst_kk_fi_d2;
 
     always_comb begin
         for (int o = 0; o < P_OCH; o++) begin
