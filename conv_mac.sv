@@ -1,3 +1,5 @@
+// case clr=1,dat_vld=0 acc_r=0
+
 module mac_body #(
     parameter int unsigned A_BIT = 8,
     parameter int unsigned W_BIT = 8,
@@ -51,15 +53,14 @@ module mac_tail #(
         if (!rst_n) begin
             acc_r <= '0;
         end else if (en) begin
-            if (clr) begin
-                acc_r <= prod + cas_in;
-            end else if (dat_vld) begin
-                acc_r <= acc_r + prod + cas_in;
-            end
+            case ({clr, dat_vld})
+                2'b00: acc_r <= acc_r;
+                2'b01: acc_r <= acc_r + prod + cas_in;
+                2'b10: acc_r <= '0; //if dat_vld=0 prod+cas_in=0; if clr=1 acc_r=0; acc_r=0
+                2'b11: acc_r <= prod + cas_in;
+            endcase
         end
     end
-
-
 
     assign acc = acc_r;
 endmodule
@@ -86,8 +87,8 @@ module conv_mac_array #(
 
     logic               [A_BIT-1:0] x_vec_dly [P_ICH];
     logic        signed [W_BIT-1:0] w_vec_dly [P_ICH];
-    logic                           dat_vld_d3;
-    logic                           clr_d3;                                   
+    logic               [P_ICH-1:1]dat_vld_dly;
+    logic               [P_ICH-1:1]clr_dly;                
     generate
         for(genvar i = 0; i < P_ICH; i++) begin : gen_x_vec_dly
             delayline # (
@@ -118,19 +119,19 @@ module conv_mac_array #(
         end
     endgenerate
 
-    generate
-        delayline # (
-            .WIDTH(2),
-            .DEPTH(P_ICH-1)
-        ) u_ctrl_dly (
-            .clk(clk),
-            .rst_n(rst_n),
-            .en(en),
-            .data_in({clr, dat_vld}),
-            .data_out({clr_d3, dat_vld_d3})
-        );
-    endgenerate
-
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            dat_vld_dly <= '0;
+            clr_dly     <= '0;
+        end if (en) begin
+            dat_vld_dly[1] <= dat_vld;//0-1
+            clr_dly[1] <= clr;
+            for (int i = 1; i < P_ICH-1; i++) begin
+                dat_vld_dly[i+1] <= dat_vld_dly[i];//1-2 2;2-3 3
+                clr_dly[i+1] <= clr_dly[i];
+            end
+        end
+    end
 
     generate
         for (genvar i = 0; i < P_ICH - 1; i++) begin : gen_mac_body
@@ -158,8 +159,8 @@ module conv_mac_array #(
         .clk    (clk),
         .rst_n  (rst_n),
         .en     (en),
-        .dat_vld(dat_vld_d3),
-        .clr    (clr_d3),
+        .dat_vld(dat_vld_dly[P_ICH-1]),//3
+        .clr    (clr_dly[P_ICH-1]),//3
         .x      (x_vec_dly[P_ICH-1]),//3
         .w      (w_vec_dly[P_ICH-1]),//3
         .cas_in (mac_cascade[P_ICH-1]),
